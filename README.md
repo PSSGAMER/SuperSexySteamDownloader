@@ -106,8 +106,6 @@ python SuperSexySteamDownloader.py
 
 ## Planned Features
 
-*(This section is a work in progress and will be updated with future development goals.)*
-
 -   [ ] *Remember the 2FA login too*
 -   [ ] *A better ACF generator*
 -   [ ] *Interactive depot selection*
