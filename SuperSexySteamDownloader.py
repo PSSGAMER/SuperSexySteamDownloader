@@ -11,6 +11,14 @@ import requests
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
+# Attempt to import zstandard for optimized decompression
+try:
+    import zstandard
+    ZSTANDARD_AVAILABLE = True
+except ImportError:
+    zstandard = None
+    ZSTANDARD_AVAILABLE = False
+
 # steam.py imports
 from steam.client import SteamClient
 from steam.client.cdn import CDNClient
@@ -192,16 +200,46 @@ class SteamDownloaderApp:
     def __init__(self) -> None:
         """Initializes the application's state and clients."""
         self.client: SteamClient = SteamClient()
-        self.cdn: CDNClient = CDNClient(self.client)
         self.sfd_path: Optional[Path] = None
         self.lua_path: Optional[Path] = None
         self.app_id: Optional[int] = None
         self.depots_to_download: List[Dict[str, Any]] = []
         self.overwrite_log: List[str] = []
-        # This determines how many files are downloaded simultaneously.
-        self.max_workers: int = 10
+        
+        # Compute dynamic max_workers based on CPU count, defaulting to at least 10
+        cpu_count = os.cpu_count() or 1
+        self.max_workers: int = max((cpu_count * 2), 10)
+        
+        # Attempt to optimize zstandard decompression if available
+        self._setup_zstandard_optimization()
+        
+        # Initialize CDN client after optimization setup
+        self.cdn: CDNClient = CDNClient(self.client)
+        
         # This cache avoids looking up the same AppID multiple times per session.
         self.app_name_cache: Dict[int, str] = {}
+
+    def _setup_zstandard_optimization(self) -> None:
+        """Attempts to enable native zstandard decompression in steam.client.cdn if available."""
+        if ZSTANDARD_AVAILABLE:
+            try:
+                import steam.client.cdn
+                
+                # Check if the steam library supports zstd monkey-patching
+                if hasattr(steam.client.cdn, '_ZSTD_AVAILABLE') and hasattr(steam.client.cdn, '_zstd'):
+                    # Override the steam library's zstd detection and module
+                    steam.client.cdn._ZSTD_AVAILABLE = True
+                    steam.client.cdn._zstd = zstandard
+                    print("✓ Native zstandard decompression enabled for faster performance")
+                else:
+                    print("ℹ Native zstandard available but steam library doesn't support monkey-patching yet")
+                    print(f"  (zstandard {zstandard.__version__} ready for future steam library updates)")
+            except Exception as e:
+                print(f"⚠ Could not enable zstandard optimization: {e}")
+        else:
+            print("ℹ zstandard package not available - using steam library default decompression")
+        
+        print(f"✓ Thread pool configured with {self.max_workers} workers (based on {os.cpu_count() or 1} CPU cores)")
 
     def _clear_screen(self) -> None:
         os.system('cls' if os.name == 'nt' else 'clear')
